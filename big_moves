@@ -1,0 +1,71 @@
+import yfinance as yf
+import pandas as pd
+from datetime import datetime
+
+class SP500MaxRollingReturns:
+    def __init__(self, years=20):
+        self.years = years
+        self.data = None
+        self.rolling_returns = None
+    
+    def fetch_data(self):
+        """
+        Fetch historical S&P 500 data for the past specified years.
+        """
+        end_date = datetime.now().strftime('%Y-%m-%d')
+        start_date = (datetime.now().year - self.years, datetime.now().month, datetime.now().day)
+        start_date = datetime(*start_date).strftime('%Y-%m-%d')
+        
+        # Fetch data using yfinance (S&P 500 ticker: '^GSPC')
+        self.data = yf.download('^GSPC', start=start_date, end=end_date)
+        if self.data.empty:
+            raise ValueError("Could not retrieve data")
+    
+    def calculate_rolling_returns(self, window=22):
+        """
+        Calculate rolling returns over the specified window (22 days by default).
+        """
+        if self.data is None:
+            raise ValueError("No data to calculate returns")
+        
+        # Calculate rolling returns (22-day percentage change)
+        self.rolling_returns = self.data['Adj Close'].pct_change(window).dropna()
+    
+    def find_largest_rolling_returns(self, n=5):
+        """
+        Find the n largest non-overlapping rolling returns.
+        
+        Parameters:
+        n: Number of largest returns to find (default is 5)
+        
+        Returns:
+        A DataFrame of the n largest non-overlapping rolling returns with their start dates.
+        """
+        if self.rolling_returns is None:
+            raise ValueError("No rolling returns calculated")
+        
+        # Sort returns by value in descending order
+        sorted_returns = self.rolling_returns.sort_values(ascending=False)
+        
+        # Select non-overlapping periods by ensuring a gap of at least the window size
+        largest_returns = []
+        used_dates = []
+        
+        for date, return_value in sorted_returns.items():
+            if len(largest_returns) >= n:
+                break
+            # Ensure no overlap by checking the date range
+            if all(abs((date - used_date).days) > 22 for used_date in used_dates):
+                largest_returns.append((date, return_value))
+                # Exclude dates within the next 22 days after this date
+                used_dates.append(date)
+        
+        # Create a DataFrame for the results
+        return pd.DataFrame(largest_returns, columns=['Date', 'Return']).set_index('Date')
+
+# Example usage:
+# sp500 = SP500MaxRollingReturns()
+# sp500.fetch_data()
+# sp500.calculate_rolling_returns()
+# largest_returns = sp500.find_largest_rolling_returns(n=5)
+# print(largest_returns)
