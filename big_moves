@@ -10,12 +10,12 @@ class MaxRollingReturns:
         Parameters:
         asset: The ticker symbol of the asset (default is S&P 500: '^GSPC')
         years: The number of years of data to fetch (default is 20)
-        window: The number of trading days for rolling returns (default is 22 days, approximately 1 month)
+        window: The maximum number of trading days for rolling returns (default is 22 days)
         move_direction: 'up' for positive returns, 'down' for negative returns (default is 'up')
         """
         self.asset = asset
         self.years = years
-        self.window = window
+        self.window = window  # Upper limit for the window
         self.move_direction = move_direction.lower()
         self.data = None
         self.rolling_returns = None
@@ -35,7 +35,7 @@ class MaxRollingReturns:
     
     def calculate_rolling_returns(self):
         """
-        Calculate rolling returns over the specified window (default is 22 days).
+        Calculate rolling returns over the window range (from 1 day to 'window' days).
         """
         if self.data is None:
             raise ValueError("No data to calculate returns")
@@ -43,18 +43,31 @@ class MaxRollingReturns:
         # Ensure index is a datetime object
         self.data.index = pd.to_datetime(self.data.index)
         
-        # Calculate rolling returns (percentage change over 'window' trading days)
-        self.rolling_returns = self.data['Adj Close'].pct_change(self.window).dropna()
+        # Initialize a DataFrame to store the best returns for each date
+        best_returns = pd.DataFrame(index=self.data.index)
+        
+        # Loop through each possible window size from 1 to 'window'
+        for win in range(1, self.window + 1):
+            rolling_return = self.data['Adj Close'].pct_change(win).dropna()
+            best_returns[win] = rolling_return
+        
+        # Find the maximum return for each day across all window sizes
+        if self.move_direction == 'up':
+            self.rolling_returns = best_returns.max(axis=1)  # For upward movement, take the max
+        elif self.move_direction == 'down':
+            self.rolling_returns = best_returns.min(axis=1)  # For downward movement, take the min
+        else:
+            raise ValueError("move_direction must be 'up' or 'down'")
     
     def find_largest_rolling_returns(self, n=5):
         """
-        Find the n largest non-overlapping rolling returns (up or down).
+        Find the n largest non-overlapping rolling returns (up or down) with the best window size.
         
         Parameters:
         n: Number of largest returns to find (default is 5)
         
         Returns:
-        A DataFrame of the n largest non-overlapping rolling returns with their start dates.
+        A DataFrame of the n largest non-overlapping rolling returns with their start and end dates.
         """
         if self.rolling_returns is None:
             raise ValueError("No rolling returns calculated")
@@ -71,17 +84,25 @@ class MaxRollingReturns:
         largest_returns = []
         used_dates = []
         
-        for date, return_value in sorted_returns.items():
+        for end_date, return_value in sorted_returns.items():
             if len(largest_returns) >= n:
                 break
+            
             # Ensure no overlap by checking the date range
-            if all(abs((date - used_date).days) > self.window for used_date in used_dates):
-                largest_returns.append((date, return_value))
-                # Exclude dates within the next 'window' days after this date
-                used_dates.append(date)
+            if all(abs((end_date - used_date).days) > self.window for used_date in used_dates):
+                # Find the window that produced this max return by checking all windows
+                for win in range(1, self.window + 1):
+                    rolling_return = self.data['Adj Close'].pct_change(win).dropna()
+                    if end_date in rolling_return.index and rolling_return[end_date] == return_value:
+                        start_idx = self.data.index.get_loc(end_date) - win
+                        if start_idx >= 0:
+                            start_date = self.data.index[start_idx]  # Use the trading date index
+                            largest_returns.append((start_date, end_date, return_value, win))
+                            used_dates.append(end_date)  # Exclude dates within the next 'window' days
+                            break  # Move to the next largest return
         
-        # Create a DataFrame for the results
-        return pd.DataFrame(largest_returns, columns=['Date', 'Return']).set_index('Date')
+        # Create a DataFrame for the results with the window used for each return
+        return pd.DataFrame(largest_returns, columns=['Start Date', 'End Date', 'Return', 'Window Size']).set_index('End Date')
 
 # Example usage for largest up moves:
 # sp500 = MaxRollingReturns(asset='^GSPC', years=20, window=22, move_direction='up')
