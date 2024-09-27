@@ -2,38 +2,53 @@ import yfinance as yf
 import pandas as pd
 from datetime import datetime
 
-class SP500MaxRollingReturns:
-    def __init__(self, years=20):
+class MaxRollingReturns:
+    def __init__(self, asset='^GSPC', years=20, window=22, move_direction='up'):
+        """
+        Initialize the class with asset ticker, years of data, window size, and move direction.
+        
+        Parameters:
+        asset: The ticker symbol of the asset (default is S&P 500: '^GSPC')
+        years: The number of years of data to fetch (default is 20)
+        window: The number of trading days for rolling returns (default is 22 days, approximately 1 month)
+        move_direction: 'up' for positive returns, 'down' for negative returns (default is 'up')
+        """
+        self.asset = asset
         self.years = years
+        self.window = window
+        self.move_direction = move_direction.lower()
         self.data = None
         self.rolling_returns = None
     
     def fetch_data(self):
         """
-        Fetch historical S&P 500 data for the past specified years.
+        Fetch historical data for the specified asset and time period.
         """
         end_date = datetime.now().strftime('%Y-%m-%d')
         start_date = (datetime.now().year - self.years, datetime.now().month, datetime.now().day)
         start_date = datetime(*start_date).strftime('%Y-%m-%d')
         
-        # Fetch data using yfinance (S&P 500 ticker: '^GSPC')
-        self.data = yf.download('^GSPC', start=start_date, end=end_date)
+        # Fetch data using yfinance for the specified asset
+        self.data = yf.download(self.asset, start=start_date, end=end_date)
         if self.data.empty:
-            raise ValueError("Could not retrieve data")
+            raise ValueError(f"Could not retrieve data for {self.asset}")
     
-    def calculate_rolling_returns(self, window=22):
+    def calculate_rolling_returns(self):
         """
-        Calculate rolling returns over the specified window (22 days by default).
+        Calculate rolling returns over the specified window (default is 22 days).
         """
         if self.data is None:
             raise ValueError("No data to calculate returns")
         
-        # Calculate rolling returns (22-day percentage change)
-        self.rolling_returns = self.data['Adj Close'].pct_change(window).dropna()
+        # Ensure index is a datetime object
+        self.data.index = pd.to_datetime(self.data.index)
+        
+        # Calculate rolling returns (percentage change over 'window' trading days)
+        self.rolling_returns = self.data['Adj Close'].pct_change(self.window).dropna()
     
     def find_largest_rolling_returns(self, n=5):
         """
-        Find the n largest non-overlapping rolling returns.
+        Find the n largest non-overlapping rolling returns (up or down).
         
         Parameters:
         n: Number of largest returns to find (default is 5)
@@ -44,8 +59,13 @@ class SP500MaxRollingReturns:
         if self.rolling_returns is None:
             raise ValueError("No rolling returns calculated")
         
-        # Sort returns by value in descending order
-        sorted_returns = self.rolling_returns.sort_values(ascending=False)
+        # Sort returns based on move direction (up or down)
+        if self.move_direction == 'up':
+            sorted_returns = self.rolling_returns.sort_values(ascending=False)  # Largest returns
+        elif self.move_direction == 'down':
+            sorted_returns = self.rolling_returns.sort_values(ascending=True)  # Largest losses
+        else:
+            raise ValueError("move_direction must be 'up' or 'down'")
         
         # Select non-overlapping periods by ensuring a gap of at least the window size
         largest_returns = []
@@ -55,17 +75,24 @@ class SP500MaxRollingReturns:
             if len(largest_returns) >= n:
                 break
             # Ensure no overlap by checking the date range
-            if all(abs((date - used_date).days) > 22 for used_date in used_dates):
+            if all(abs((date - used_date).days) > self.window for used_date in used_dates):
                 largest_returns.append((date, return_value))
-                # Exclude dates within the next 22 days after this date
+                # Exclude dates within the next 'window' days after this date
                 used_dates.append(date)
         
         # Create a DataFrame for the results
         return pd.DataFrame(largest_returns, columns=['Date', 'Return']).set_index('Date')
 
-# Example usage:
-# sp500 = SP500MaxRollingReturns()
+# Example usage for largest up moves:
+# sp500 = MaxRollingReturns(asset='^GSPC', years=20, window=22, move_direction='up')
 # sp500.fetch_data()
 # sp500.calculate_rolling_returns()
 # largest_returns = sp500.find_largest_rolling_returns(n=5)
 # print(largest_returns)
+
+# Example usage for largest down moves:
+# sp500 = MaxRollingReturns(asset='^GSPC', years=20, window=22, move_direction='down')
+# sp500.fetch_data()
+# sp500.calculate_rolling_returns()
+# largest_down_moves = sp500.find_largest_rolling_returns(n=5)
+# print(largest_down_moves)
