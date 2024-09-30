@@ -1,0 +1,55 @@
+import yfinance as yf
+import pandas as pd
+from datetime import datetime
+
+# Dates of Rosh Hashanah and Yom Kippur from 2000-2023
+rosh_hashanah_dates = [
+    '2000-09-29', '2001-09-18', '2002-09-06', '2003-09-26', '2004-09-15', '2005-10-03', '2006-09-22',
+    '2007-09-12', '2008-09-29', '2009-09-18', '2010-09-08', '2011-09-28', '2012-09-16', '2013-09-04',
+    '2014-09-24', '2015-09-13', '2016-10-02', '2017-09-20', '2018-09-09', '2019-09-29', '2020-09-18',
+    '2021-09-06', '2022-09-25', '2023-09-15'
+]
+
+yom_kippur_dates = [
+    '2000-10-08', '2001-09-27', '2002-09-15', '2003-10-05', '2004-09-24', '2005-10-12', '2006-10-01',
+    '2007-09-21', '2008-10-08', '2009-09-27', '2010-09-17', '2011-10-07', '2012-09-25', '2013-09-13',
+    '2014-10-03', '2015-09-22', '2016-10-11', '2017-09-29', '2018-09-18', '2019-10-08', '2020-09-27',
+    '2021-09-15', '2022-10-04', '2023-09-24'
+]
+
+# Create DataFrame for the dates
+dates_df = pd.DataFrame({
+    'Year': range(2000, 2024),
+    'Rosh Hashanah': [datetime.strptime(date, '%Y-%m-%d') for date in rosh_hashanah_dates],
+    'Yom Kippur': [datetime.strptime(date, '%Y-%m-%d') for date in yom_kippur_dates]
+})
+
+# Fetch SPX data using yfinance
+spx_data = yf.download('^GSPC', start='2000-01-01', end='2024-01-01')
+
+# Initialize lists to store returns and prices
+returns = []
+rosh_hashanah_prices = []
+yom_kippur_prices = []
+
+# Calculate the returns for each year from Rosh Hashanah to Yom Kippur
+for i, row in dates_df.iterrows():
+    # Get the closest trading day for Rosh Hashanah and Yom Kippur
+    rosh_start = spx_data.loc[spx_data.index >= row['Rosh Hashanah']].iloc[0]
+    yom_end = spx_data.loc[spx_data.index >= row['Yom Kippur']].iloc[0]
+    
+    # Store prices for reference
+    rosh_hashanah_prices.append(rosh_start['Close'])
+    yom_kippur_prices.append(yom_end['Close'])
+    
+    # Calculate return
+    ret = (yom_end['Close'] / rosh_start['Close']) - 1
+    returns.append(ret)
+
+# Add returns and prices to the DataFrame
+dates_df['Rosh Hashanah Price'] = rosh_hashanah_prices
+dates_df['Yom Kippur Price'] = yom_kippur_prices
+dates_df['Return'] = returns
+
+# Display the results
+print(dates_df[['Year', 'Rosh Hashanah', 'Yom Kippur', 'Rosh Hashanah Price', 'Yom Kippur Price', 'Return']])
