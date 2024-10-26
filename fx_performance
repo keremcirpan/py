@@ -16,6 +16,7 @@ fig = go.Figure()
 
 # Add a line for each currency
 for currency, performance in currency_data.items():
+    text_labels = [''] * (len(performance) - 1) + [currency]
     fig.add_trace(go.Scatter(
         x=dates, y=performance, mode='lines+markers+text',
         name=currency, text=[currency]*len(dates), textposition='top right'
